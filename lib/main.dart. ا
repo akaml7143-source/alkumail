@@ -1,174 +1,542 @@
 
 import 'package:flutter/material.dart';
-
-void main() {
-  runApp(const AlKumailApp());
-}
+import 'package:shared_preferences/shared_preferences.dart';
 
 const Color emerald = Color(0xFF123D35);
 const Color gold = Color(0xFFC6A45C);
 const Color ivory = Color(0xFFF8F4E9);
+const Color darkBackground = Color(0xFF101C19);
 
-class AlKumailApp extends StatelessWidget {
-  const AlKumailApp({super.key});
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+
+  runApp(AlKumailApp(
+    darkMode: prefs.getBool('darkMode') ?? false,
+    fontScale: prefs.getDouble('fontScale') ?? 1.0,
+    counter: prefs.getInt('tasbihCounter') ?? 0,
+    favorites: prefs.getStringList('favorites') ?? [],
+  ));
+}
+
+class AlKumailApp extends StatefulWidget {
+  final bool darkMode;
+  final double fontScale;
+  final int counter;
+  final List<String> favorites;
+
+  const AlKumailApp({
+    super.key,
+    required this.darkMode,
+    required this.fontScale,
+    required this.counter,
+    required this.favorites,
+  });
+
+  @override
+  State<AlKumailApp> createState() => _AlKumailAppState();
+}
+
+class _AlKumailAppState extends State<AlKumailApp> {
+  late bool darkMode;
+  late double fontScale;
+  late int counter;
+  late Set<String> favorites;
+
+  @override
+  void initState() {
+    super.initState();
+    darkMode = widget.darkMode;
+    fontScale = widget.fontScale;
+    counter = widget.counter;
+    favorites = widget.favorites.toSet();
+  }
+
+  Future<void> saveValue(String key, Object value) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is List<String>) {
+      await prefs.setStringList(key, value);
+    }
+  }
+
+  void changeCounter(int value) {
+    setState(() => counter = value < 0 ? 0 : value);
+    saveValue('tasbihCounter', counter);
+  }
+
+  void toggleFavorite(String item) {
+    setState(() {
+      if (favorites.contains(item)) {
+        favorites.remove(item);
+      } else {
+        favorites.add(item);
+      }
+    });
+    saveValue('favorites', favorites.toList());
+  }
+
+  void changeDarkMode(bool value) {
+    setState(() => darkMode = value);
+    saveValue('darkMode', value);
+  }
+
+  void changeFontScale(double value) {
+    setState(() => fontScale = value);
+    saveValue('fontScale', value);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final base = darkMode ? const Color(0xFF182520) : ivory;
+    final foreground = darkMode ? Colors.white : emerald;
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'الكُميل',
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: 'Arial',
-        scaffoldBackgroundColor: ivory,
-        colorScheme: ColorScheme.fromSeed(seedColor: emerald),
+        brightness: darkMode ? Brightness.dark : Brightness.light,
+        scaffoldBackgroundColor: base,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: emerald,
+          brightness: darkMode ? Brightness.dark : Brightness.light,
+          primary: emerald,
+          secondary: gold,
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: darkMode ? darkBackground : emerald,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        textTheme: ThemeData(
+          brightness: darkMode ? Brightness.dark : Brightness.light,
+        ).textTheme.apply(
+          fontFamily: 'Arial',
+          fontSizeFactor: fontScale,
+          bodyColor: foreground,
+          displayColor: foreground,
+        ),
       ),
-      home: const HomePage(),
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
+      },
+      home: MainShell(
+        darkMode: darkMode,
+        fontScale: fontScale,
+        counter: counter,
+        favorites: favorites,
+        onCounterChanged: changeCounter,
+        onFavoriteChanged: toggleFavorite,
+        onDarkModeChanged: changeDarkMode,
+        onFontScaleChanged: changeFontScale,
+      ),
+    );
+  }
+}
+
+class MainShell extends StatefulWidget {
+  final bool darkMode;
+  final double fontScale;
+  final int counter;
+  final Set<String> favorites;
+  final ValueChanged<int> onCounterChanged;
+  final ValueChanged<String> onFavoriteChanged;
+  final ValueChanged<bool> onDarkModeChanged;
+  final ValueChanged<double> onFontScaleChanged;
+
+  const MainShell({
+    super.key,
+    required this.darkMode,
+    required this.fontScale,
+    required this.counter,
+    required this.favorites,
+    required this.onCounterChanged,
+    required this.onFavoriteChanged,
+    required this.onDarkModeChanged,
+    required this.onFontScaleChanged,
+  });
+
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  int selectedIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      HomePage(
+        onOpen: openSection,
+        counter: widget.counter,
+        onCounterChanged: widget.onCounterChanged,
+      ),
+      FavoritesPage(
+        favorites: widget.favorites,
+        onFavoriteChanged: widget.onFavoriteChanged,
+      ),
+      SettingsPage(
+        darkMode: widget.darkMode,
+        fontScale: widget.fontScale,
+        onDarkModeChanged: widget.onDarkModeChanged,
+        onFontScaleChanged: widget.onFontScaleChanged,
+      ),
+    ];
+
+    return Scaffold(
+      body: IndexedStack(
+        index: selectedIndex,
+        children: pages,
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (index) {
+          setState(() => selectedIndex = index);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'الرئيسية',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.favorite_outline),
+            selectedIcon: Icon(Icons.favorite),
+            label: 'المفضلة',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'الإعدادات',
+          ),
+        ],
+      ),
+    );
+  }
+
+  void openSection(String title) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SectionPage(
+          title: title,
+          favorites: widget.favorites,
+          onFavoriteChanged: widget.onFavoriteChanged,
+          counter: widget.counter,
+          onCounterChanged: widget.onCounterChanged,
+        ),
+      ),
     );
   }
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  final ValueChanged<String> onOpen;
+  final int counter;
+  final ValueChanged<int> onCounterChanged;
 
-  final List<Map<String, dynamic>> sections = const [
-    {'title': 'الأدعية', 'icon': Icons.menu_book_rounded},
-    {'title': 'الزيارات', 'icon': Icons.mosque_rounded},
-    {'title': 'صلاة الليل وفضلها', 'icon': Icons.nightlight_round},
-    {'title': 'المسبحة الإلكترونية', 'icon': Icons.radio_button_checked},
-  ];
+  const HomePage({
+    super.key,
+    required this.onOpen,
+    required this.counter,
+    required this.onCounterChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: emerald,
-        foregroundColor: gold,
-        centerTitle: true,
-        title: const Text(
-          'الكُميل',
-          style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Container(
-            height: 205,
-            decoration: BoxDecoration(
-              color: emerald,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: gold, width: 1.5),
-            ),
-            child: const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.mosque, color: gold, size: 65),
-                  SizedBox(height: 12),
-                  Text(
-                    'الكُميل',
-                    style: TextStyle(
-                      color: gold,
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'رفيقك في الدعاء والزيارة والعبادة',
-                    style: TextStyle(color: Colors.white, fontSize: 15),
-                  ),
-                ],
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(22, 48, 22, 30),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF123D35), Color(0xFF285B4D)],
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+              ),
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(32),
               ),
             ),
-          ),
-          const SizedBox(height: 25),
-          const Text(
-            'أقسام التطبيق',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              color: emerald,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 14),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: sections.length,
-            gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.15,
-            ),
-            itemBuilder: (context, index) {
-              final item = sections[index];
-              return InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SectionPage(
-                        title: item['title'],
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: gold.withOpacity(0.7)),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(item['icon'], color: emerald, size: 42),
-                      const SizedBox(height: 12),
-                      Text(
-                        item['title'],
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: emerald,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 25),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFECE5D5),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Column(
+            child: Column(
               children: [
-                Text(
-                  '﴿ أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ ﴾',
-                  textAlign: TextAlign.center,
+                const Icon(
+                  Icons.mosque_outlined,
+                  color: gold,
+                  size: 58,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'الكُميل',
                   style: TextStyle(
-                    fontSize: 20,
-                    color: emerald,
+                    color: Colors.white,
+                    fontSize: 32,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 8),
-                Text(
-                  'سورة الرعد - الآية 28',
-                  style: TextStyle(color: emerald),
+                const SizedBox(height: 8),
+                const Text(
+                  'رفيقك في الدعاء والزيارة والذكر',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: gold.withOpacity(.7)),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'بِذِكْرِ اللهِ تَطْمَئِنُّ الْقُلُوبُ',
+                    style: TextStyle(
+                      color: Color(0xFFFFE7AE),
+                      fontSize: 19,
+                    ),
+                  ),
                 ),
               ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(18),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'أقسام التطبيق',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 13,
+                  crossAxisSpacing: 13,
+                  childAspectRatio: 1.15,
+                  children: [
+                    SectionCard(
+                      title: 'الأدعية',
+                      subtitle: 'مجموعة من الأدعية',
+                      icon: Icons.menu_book_rounded,
+                      onTap: () => onOpen('الأدعية'),
+                    ),
+                    SectionCard(
+                      title: 'الزيارات',
+                      subtitle: 'زيارات أهل البيت',
+                      icon: Icons.mosque_outlined,
+                      onTap: () => onOpen('الزيارات'),
+                    ),
+                    SectionCard(
+                      title: 'صلاة الليل',
+                      subtitle: 'فضلها وكيفيتها',
+                      icon: Icons.nightlight_round,
+                      onTap: () => onOpen('صلاة الليل'),
+                    ),
+                    SectionCard(
+                      title: 'المسبحة الإلكترونية',
+                      subtitle: 'التسبيح والذكر',
+                      icon: Icons.radio_button_checked,
+                      onTap: () => onOpen('المسبحة الإلكترونية'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'تسبيح سريع',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TasbihCard(
+                  counter: counter,
+                  onCounterChanged: onCounterChanged,
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'اجعل لسانك رطباً بذكر الله',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: gold,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class SectionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const SectionCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1,
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: gold.withOpacity(.35)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 37, color: gold),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SectionPage extends StatelessWidget {
+  final String title;
+  final Set<String> favorites;
+  final ValueChanged<String> onFavoriteChanged;
+  final int counter;
+  final ValueChanged<int> onCounterChanged;
+
+  const SectionPage({
+    super.key,
+    required this.title,
+    required this.favorites,
+    required this.onFavoriteChanged,
+    required this.counter,
+    required this.onCounterChanged,
+  });
+
+  static const Map<String, List<String>> content = {
+    'الأدعية': [
+      'دعاء كميل',
+      'دعاء التوسل',
+      'دعاء الندبة',
+      'دعاء الصباح',
+      'دعاء أبي حمزة الثمالي',
+      'الصحيفة السجادية',
+    ],
+    'الزيارات': [
+      'زيارة عاشوراء',
+      'زيارة أمين الله',
+      'الزيارة الجامعة الكبيرة',
+      'زيارة وارث',
+      'زيارة أمير المؤمنين عليه السلام',
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (title == 'المسبحة الإلكترونية') {
+      return Scaffold(
+        appBar: AppBar(title: Text(title)),
+        body: TasbihPage(
+          counter: counter,
+          onCounterChanged: onCounterChanged,
+        ),
+      );
+    }
+
+    if (title == 'صلاة الليل') {
+      return Scaffold(
+        appBar: AppBar(title: Text(title)),
+        body: const NightPrayerPage(),
+      );
+    }
+
+    final items = content[title] ?? [];
+
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const InfoBanner(
+            text: 'اختر النص الذي تريد الرجوع إليه. تُضاف النصوص الكاملة بعد مراجعتها وتوثيق مصادرها.',
+          ),
+          const SizedBox(height: 12),
+          ...items.map(
+            (item) => Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: ivory,
+                  child: Icon(Icons.auto_stories, color: emerald),
+                ),
+                title: Text(
+                  item,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text('النص الكامل يحتاج إلى توثيق المصدر'),
+                trailing: IconButton(
+                  icon: Icon(
+                    favorites.contains(item)
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    color: favorites.contains(item) ? Colors.red : gold,
+                  ),
+                  onPressed: () => onFavoriteChanged(item),
+                ),
+              ),
             ),
           ),
         ],
@@ -177,30 +545,485 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class SectionPage extends StatelessWidget {
-  final String title;
+class InfoBanner extends StatelessWidget {
+  final String text;
 
-  const SectionPage({super.key, required this.title});
+  const InfoBanner({super.key, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: gold.withOpacity(.13),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: gold.withOpacity(.45)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: gold),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+        ],
+      ),
+    );
+  }
+}
+
+class NightPrayerPage extends StatelessWidget {
+  const NightPrayerPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      'صلاة الليل المشهورة تتكون من ثماني ركعات نافلة الليل، ثم ركعتي الشفع، ثم ركعة الوتر.',
+      'تُصلّى ركعات نافلة الليل أربع صلوات، كل صلاة ركعتان.',
+      'بعدها تُصلّى ركعتا الشفع.',
+      'ثم ركعة الوتر، ولها أحكام وأعمال مستحبة مذكورة في كتب الأدعية والفقه.',
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [emerald, Color(0xFF285B4D)],
+            ),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: const Column(
+            children: [
+              Icon(Icons.nightlight_round, color: gold, size: 48),
+              SizedBox(height: 12),
+              Text(
+                'صلاة الليل',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 25,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'نافلة مباركة للتقرب إلى الله تعالى',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'كيفية الصلاة بصورة عامة',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        ...steps.asMap().entries.map(
+          (entry) => Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: gold.withOpacity(.2),
+                child: Text('${entry.key + 1}'),
+              ),
+              title: Text(entry.value),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const InfoBanner(
+          text: 'هذه معلومات تعريفية عامة وليست فتوى. يُرجى الرجوع إلى الرسالة العملية للمرجع الذي تتبعونه لمعرفة التفاصيل والأحكام.',
+        ),
+      ],
+    );
+  }
+}
+
+class TasbihCard extends StatelessWidget {
+  final int counter;
+  final ValueChanged<int> onCounterChanged;
+
+  const TasbihCard({
+    super.key,
+    required this.counter,
+    required this.onCounterChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'عدد التسبيحات',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$counter',
+                    style: const TextStyle(
+                      fontSize: 30,
+                      color: gold,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: emerald,
+                foregroundColor: Colors.white,
+                shape: const CircleBorder(),
+                padding: const EdgeInsets.all(22),
+              ),
+              onPressed: () => onCounterChanged(counter + 1),
+              child: const Icon(Icons.add, size: 28),
+            ),
+            IconButton(
+              tooltip: 'تصفير',
+              onPressed: () => onCounterChanged(0),
+              icon: const Icon(Icons.refresh, color: gold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class TasbihPage extends StatefulWidget {
+  final int counter;
+  final ValueChanged<int> onCounterChanged;
+
+  const TasbihPage({
+    super.key,
+    required this.counter,
+    required this.onCounterChanged,
+  });
+
+  @override
+  State<TasbihPage> createState() => _TasbihPageState();
+}
+
+class _TasbihPageState extends State<TasbihPage> {
+  int mode = 0;
+  int step = 0;
+
+  final List<String> phrases = [
+    'الله أكبر',
+    'الحمد لله',
+    'سبحان الله',
+  ];
+
+  final List<int> targets = [34, 33, 33];
+
+  String get currentPhrase {
+    if (mode == 1) return 'تسبيح مفتوح';
+    return phrases[step];
+  }
+
+  int get currentTarget {
+    if (mode == 1) return 0;
+    return targets[step];
+  }
+
+  void count() {
+    final next = widget.counter + 1;
+    widget.onCounterChanged(next);
+
+    if (mode == 0 && next >= currentTarget) {
+      if (step < 2) {
+        setState(() => step++);
+      } else {
+        setState(() => step = 0);
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('أحسنت'),
+            content: const Text('اكتمل تسبيح الزهراء عليها السلام.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('حسناً'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  void reset() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('تصفير العدّاد'),
+        content: const Text('هل تريد تصفير عدّاد التسبيح؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () {
+              widget.onCounterChanged(0);
+              setState(() => step = 0);
+              Navigator.pop(context);
+            },
+            child: const Text('تصفير'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = mode == 0
+        ? (currentTarget - widget.counter).clamp(0, currentTarget)
+        : 0;
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('تسبيح الزهراء')),
+              ButtonSegment(value: 1, label: Text('تسبيح مفتوح')),
+            ],
+            selected: {mode},
+            onSelectionChanged: (value) {
+              setState(() {
+                mode = value.first;
+                step = 0;
+              });
+              widget.onCounterChanged(0);
+            },
+          ),
+          const Spacer(),
+          Text(
+            currentPhrase,
+            style: const TextStyle(
+              fontSize: 29,
+              fontWeight: FontWeight.bold,
+              color: gold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '${widget.counter}',
+            style: const TextStyle(
+              fontSize: 65,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (mode == 0)
+            Text(
+              'المتبقي: $remaining',
+              style: const TextStyle(fontSize: 16),
+            ),
+          const SizedBox(height: 30),
+          InkWell(
+            onTap: count,
+            borderRadius: BorderRadius.circular(100),
+            child: Container(
+              width: 190,
+              height: 190,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [emerald, Color(0xFF285B4D)],
+                ),
+                border: Border.all(color: gold, width: 5),
+                boxShadow: [
+                  BoxShadow(
+                    color: emerald.withOpacity(.2),
+                    blurRadius: 18,
+                    spreadRadius: 3,
+                  ),
+                ],
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.touch_app, color: gold, size: 42),
+                  SizedBox(height: 8),
+                  Text(
+                    'اضغط للتسبيح',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          OutlinedButton.icon(
+            onPressed: reset,
+            icon: const Icon(Icons.refresh),
+            label: const Text('تصفير العدّاد'),
+          ),
+          const SizedBox(height: 15),
+        ],
+      ),
+    );
+  }
+}
+
+class FavoritesPage extends StatelessWidget {
+  final Set<String> favorites;
+  final ValueChanged<String> onFavoriteChanged;
+
+  const FavoritesPage({
+    super.key,
+    required this.favorites,
+    required this.onFavoriteChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = favorites.toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('المفضلة')),
+      body: items.isEmpty
+          ? const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.favorite_border, size: 55, color: gold),
+                  SizedBox(height: 12),
+                  Text('لم تضف أي عنصر إلى المفضلة بعد'),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(14),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.bookmark, color: gold),
+                    title: Text(item),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.favorite, color: Colors.red),
+                      onPressed: () => onFavoriteChanged(item),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class SettingsPage extends StatelessWidget {
+  final bool darkMode;
+  final double fontScale;
+  final ValueChanged<bool> onDarkModeChanged;
+  final ValueChanged<double> onFontScaleChanged;
+
+  const SettingsPage({
+    super.key,
+    required this.darkMode,
+    required this.fontScale,
+    required this.onDarkModeChanged,
+    required this.onFontScaleChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: emerald,
-        foregroundColor: gold,
-        title: Text(title),
-        centerTitle: true,
-      ),
-      body: Center(
-        child: Text(
-          'قسم $title\nسيتم إضافة محتواه بالتفصيل',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: emerald,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
+      appBar: AppBar(title: const Text('الإعدادات')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          Card(
+            child: SwitchListTile(
+              secondary: const Icon(Icons.dark_mode, color: gold),
+              title: const Text('الوضع الداكن'),
+              subtitle: const Text('تغيير مظهر التطبيق'),
+              value: darkMode,
+              onChanged: onDarkModeChanged,
+            ),
           ),
-        ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.text_fields, color: gold),
+                      SizedBox(width: 10),
+                      Text(
+                        'حجم الخط',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: fontScale,
+                    min: .85,
+                    max: 1.4,
+                    divisions: 11,
+                    label: '${(fontScale * 100).round()}%',
+                    onChanged: onFontScaleChanged,
+                  ),
+                  Text('الحجم الحالي: ${(fontScale * 100).round()}%'),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.info_outline, color: gold),
+              title: const Text('عن تطبيق الكُميل'),
+              subtitle: const Text('معلومات التطبيق'),
+              onTap: () {
+                showAboutDialog(
+                  context: context,
+                  applicationName: 'الكُميل',
+                  applicationVersion: '1.0.0',
+                  applicationLegalese:
+                      'تطبيق للأدعية والزيارات وصلاة الليل والتسبيح الإلكتروني.',
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Center(
+            child: Text(
+              'الكُميل',
+              style: TextStyle(
+                color: gold,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const Center(
+            child: Text('نسأل الله القبول والتوفيق'),
+          ),
+        ],
       ),
     );
   }
